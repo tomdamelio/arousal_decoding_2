@@ -12,8 +12,8 @@ from sklearn.svm import SVR
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score, GroupShuffleSplit, KFold, cross_val_predict, GridSearchCV, RandomizedSearchCV
 from sklearn.ensemble import RandomForestRegressor
-import mne
 
+import mne
 from mne import Epochs
 from mne.datasets.fieldtrip_cmc import data_path
 
@@ -114,16 +114,56 @@ def compute_model_output (eda=eda, model=model):
     
     if model == 'mean':
         y = eda_epochs_shift.get_data().mean(axis=2)[:, 0]  
-    elif model == 'var':
+    elif model == 'delta':
+        y = eda_epochs_shift.get_data().max(axis=2)[:, 0] - eda_epochs_shift.get_data().min(axis=2)[:, 0]
+    else:
         y = eda_epochs_shift.get_data().var(axis=2)[:, 0]     
         
     return y
 
+def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
+    out = dict(n_components=n_components)
+    for name, est in estimators.items():
+        print(name)
+        this_est = est
+        this_est.steps[0][1].n_compo = n_components
+        scores = cross_val_score(
+            X=X, y=y, cv=cv, estimator=this_est, n_jobs=1,
+            groups=groups,
+            scoring=scoring)
+        if scoring == 'neg_mean_absolute_error':
+            scores = -scores
+        print(np.mean(scores), f"+/-{np.std(scores)}")
+        out[name] = scores
+    return out
+
+
+low_rank_estimators = {k: v for k, v in pipelines.items()
+                       if k in ('riemann')} #'spoc', 
+
+out_list = Parallel(n_jobs=n_jobs)(delayed(run_low_rank)(
+                    n_components=cc, X=X, y=y,
+                    groups=groups,
+                    cv=GroupShuffleSplit(
+                        n_splits=10, train_size=.8, test_size=.2),
+                    estimators=low_rank_estimators, scoring='r2')
+                    for cc in n_components)
+out_frames = list()
+for this_dict in out_list:
+    this_df = pd.DataFrame({#'spoc': this_dict['spoc'],
+                           'riemann': this_dict['riemann']})
+    this_df['n_components'] = this_dict['n_components']
+    this_df['fold_idx'] = np.arange(len(this_df))
+    out_frames.append(this_df)
+out_df = pd.concat(out_frames)
+
+out_df.to_csv("./DEAP_component_scores.csv")
+
+mean_df = out_df.groupby('n_components').mean().reset_index()
+
 #### CONTINUE HERE #####
 """
-Is it necessary to run run_low_rank (function to obtain optimal n_components for one subject).
-Wouldn't be overfitting?
-After deciding that, create function to implement different models to predict y from X
+
 
 """
     
@@ -131,6 +171,7 @@ def pipeline_all_subjects(directory        =  'data',
                           number_subject   =  'all',
                           high_pass_filter =   0.01, 
                           shift_EDA        =   1.5,
+                          tune_components  =   True,
                           target           =   'var',
                           model            =  'TweedieRegressor',):
     """
