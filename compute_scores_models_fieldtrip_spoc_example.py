@@ -84,8 +84,9 @@ X = np.array(X)
 X = np.squeeze(X)
 # order axis of ndarray (first n_sub, then n_fb)
 X = X.transpose(1,0,2,3)
-            
-y = eda_epochs.get_data().var(axis=2)[:, 0]  # target is EDA power
+
+#%%            
+#y = eda_epochs.get_data().var(axis=2)[:, 0]  # target is EDA power
 
 n_sub, n_fb, n_ch, _ = X.shape
 
@@ -126,14 +127,6 @@ pipelines = {
 }
 
 #%%
-n_components = np.arange(1, 152, 1)
-# now let's do group shuffle split
-splits = np.array_split(np.arange(len(y)), n_splits)
-groups = np.zeros(len(y), dtype=np.int)
-for val, inds in enumerate(splits):
-    groups[inds] = val
-
-#%%
 # Shift EDA signal 1.5 seconds.
 # EDA Band-pass filter
 eda.filter(0.01, 5, fir_design='firwin') # Filter very low freqs
@@ -145,12 +138,24 @@ eda_epochs_shift = Epochs(eda, events_shift,  event_id=3000, tmin=0, tmax=pp.dur
 y = eda_epochs_shift.get_data().var(axis=2)[:, 0]  # target is EDA mean
 
 #%%
-def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
+n_components = np.arange(1, 32, 1) # max components --> 32 --> 32 EEG channels
+# now let's do group shuffle split
+splits = np.array_split(np.arange(len(y)), n_splits)
+groups = np.zeros(len(y), dtype=np.int)
+for val, inds in enumerate(splits):
+    groups[inds] = val
+
+
+#%%
+def run_low_rank(n_components, X, y, cv, estimators, scoring, groups): 
+    """
+    Calculate models' performance depending on n_components
+    """
     out = dict(n_components=n_components)
-    for name, est in estimators.items():
+    for name, est in estimators.items(): #e.g. name --> riemann // est --> make_pipeline(...)
         print(name)
-        this_est = est
-        this_est.steps[0][1].n_compo = n_components
+        this_est = est # est --> make_pipeline(...)
+        this_est.steps[0][1].n_compo = n_components #151 -> n_components inside Riemann inside pipeline
         scores = cross_val_score(
             X=X, y=y, cv=cv, estimator=this_est, n_jobs=1,
             groups=groups,
@@ -210,7 +215,7 @@ best_components = {
 ############################################
 
 riemann_model = make_pipeline(
-    ProjCommonSpace(scale=scale, n_compo=best_components['riemann'],
+    ProjCommonSpace(scale=scale, n_compo= 10, #best_components['riemann'],
                     reg=1.e-05),
     Riemann(n_fb=n_fb, metric=metric),
    StandardScaler(),

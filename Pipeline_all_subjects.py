@@ -65,7 +65,7 @@ def preprocess (directory        =  directory,
     
     return eda, raw
 
-def compute_cov_matrices (raw=raw,):
+def compute_cov_matrices (raw=raw, eda=eda):
     """
     Inputs raw (EEG) and calculate covariance matrices ('X' in our model)
     
@@ -121,6 +121,7 @@ def compute_model_output (eda=eda, model=model):
         
     return y
 
+
 def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
     out = dict(n_components=n_components)
     for name, est in estimators.items():
@@ -138,34 +139,54 @@ def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
     return out
 
 
-low_rank_estimators = {k: v for k, v in pipelines.items()
-                       if k in ('riemann')} #'spoc', 
+def low_rank(out=out):
 
-out_list = Parallel(n_jobs=n_jobs)(delayed(run_low_rank)(
-                    n_components=cc, X=X, y=y,
-                    groups=groups,
-                    cv=GroupShuffleSplit(
-                        n_splits=10, train_size=.8, test_size=.2),
-                    estimators=low_rank_estimators, scoring='r2')
-                    for cc in n_components)
-out_frames = list()
-for this_dict in out_list:
-    this_df = pd.DataFrame({#'spoc': this_dict['spoc'],
-                           'riemann': this_dict['riemann']})
-    this_df['n_components'] = this_dict['n_components']
-    this_df['fold_idx'] = np.arange(len(this_df))
-    out_frames.append(this_df)
-out_df = pd.concat(out_frames)
+    low_rank_estimators = {k: v for k, v in pipelines.items()
+                        if k in ('riemann')} #'spoc', 
 
-out_df.to_csv("./DEAP_component_scores.csv")
+    out_list = Parallel(n_jobs=n_jobs)(delayed(run_low_rank)(
+                        n_components=cc, X=X, y=y,
+                        groups=groups,
+                        cv=GroupShuffleSplit(
+                            n_splits=10, train_size=.8, test_size=.2),
+                        estimators=low_rank_estimators, scoring='r2')
+                        for cc in n_components)
+    out_frames = list()
+    for this_dict in out_list:
+        this_df = pd.DataFrame({#'spoc': this_dict['spoc'],
+                            'riemann': this_dict['riemann']})
+        this_df['n_components'] = this_dict['n_components']
+        this_df['fold_idx'] = np.arange(len(this_df))
+        out_frames.append(this_df)
+    out_df = pd.concat(out_frames)
 
-mean_df = out_df.groupby('n_components').mean().reset_index()
+    out_df.to_csv("./DEAP_component_scores.csv")
 
-#### CONTINUE HERE #####
-"""
+    mean_df = out_df.groupby('n_components').mean().reset_index()
+    
 
+def select_best_components():
+    best_components = {
+    #'spoc': mean_df['n_components'][mean_df['spoc'].argmax()],
+    'riemann': mean_df['n_components'][mean_df['riemann'].argmax()]
+    }
+    return best_components
 
-"""
+def models(estimator=estimator):
+    riemann_model = make_pipeline(
+    ProjCommonSpace(scale=scale, n_compo= 10, #best_components['riemann'],
+                    reg=1.e-05),
+    Riemann(n_fb=n_fb, metric=metric),
+    StandardScaler(),
+#   RidgeCV(alphas=ridge_shrinkage))
+#   GammaRegressor())
+#   BayesianRidge())
+#   TweedieRegressor())
+#   SVR(kernel='poly', C=100, gamma='auto', degree=3, epsilon=.1,
+#              coef0=1))
+#  SGDRegressor())
+    estimator())
+
     
 def pipeline_all_subjects(directory        =  'data',
                           number_subject   =  'all',
@@ -174,7 +195,9 @@ def pipeline_all_subjects(directory        =  'data',
                           tune_components  =   True,
                           target           =   'var',
                           model            =  'TweedieRegressor',):
+
     """
+
     Reads the all subject files in 'data', preprocess signals, predicts EDA from EEG,
     and outputs a .csv file per subject in 'outputs'
 
@@ -186,10 +209,14 @@ def pipeline_all_subjects(directory        =  'data',
                          Default = 1.5
     :target:             String.   Y used in our model 
                          Default = 'mean' --> mean of EDA
-    :model:              String.   Model used to predict EDA
+    :estimator:          String.   Model used to predict EDA
                          Default = 'TweedieRegressor'
                             
     
     :return: .csv file per subject with predicted EDA (specifying other parameters)
     """ 
 
+    preprocess (directory        =  directory,
+                number_subject   =  number_subject,
+                extension        = '.bdf',
+                high_pass_filter =  high_pass_filter):
