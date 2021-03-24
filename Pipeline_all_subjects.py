@@ -10,19 +10,26 @@ import config as cfg
 from sklearn.dummy import DummyRegressor
 from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.linear_model import RidgeCV, GammaRegressor, BayesianRidge, TweedieRegressor, SGDRegressor
-#from sklearn.svm import SVR
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score, GroupShuffleSplit, KFold, cross_val_predict, GridSearchCV, RandomizedSearchCV
 from sklearn.ensemble import RandomForestRegressor
-#from mne import Epochs
-#from mne.datasets.fieldtrip_cmc import data_path
 from joblib import Parallel, delayed
+from itertools import product
 
 from library.spfiltering import (
     ProjIdentitySpace, ProjCommonSpace, ProjSPoCSpace)
 from library.featuring import Riemann, LogDiag, NaiveVec
 import library.preprocessing_david as pp
 from subject_number import subject_number
+
+###########################################################################
+n_compo = 32
+scale = 'auto'
+metric = 'riemann'
+seed = 42
+n_splits = 2
+n_jobs = 20
+###########################################################################
 
 def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
     out = dict(n_components=n_components)
@@ -31,7 +38,7 @@ def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
         this_est = est # est --> make_pipeline(...)
         this_est.steps[0][1].n_compo = n_components #151 -> n_components inside Riemann inside pipeline
         scores = cross_val_score(
-            X=X, y=y, cv=cv, estimator=this_est, n_jobs=1,
+            X=X, y=y, cv=cv, estimator=this_est, n_jobs=n_jobs,
             groups=groups,
             scoring=scoring)
         if scoring == 'neg_mean_absolute_error':
@@ -41,15 +48,20 @@ def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
     return out
 
 #%%
-def pipeline_all_subjects  (directory        =  'data',
-                            number_subject   =   subject_number,
-                            crop             =   True,
-                            extension        =  '.bdf',
-                            high_pass_filter =   0.01,
-                            shift_EDA        =   1.5,
-                            tune_components  =   True,
-                            target           =   'var',
-                            estimator        =   TweedieRegressor):
+def global_run (directory         =  'data',
+                number_subject    =   subject_number,
+                crop              =   True,
+                extension         =  '.bdf',
+                high_pass_filter  =   0.01,
+                shift_EDA         =   1.5,
+                tune_components   =   True,
+                target            =   'delta',
+                scores_prediction =   False,
+                estimator         =   TweedieRegressor,
+                power             =   2,
+                alpha             =   1,
+                link              =   'log'
+                ):
 
     """
 
@@ -66,28 +78,26 @@ def pipeline_all_subjects  (directory        =  'data',
     :tune_components:    Boolean. Tune n_components (rank of cov matrices)
                          Default = True                    
     :target:             String.   'Y' used in our model 
-                         Default = 'var' --> var of EDA epochs
+                         Default = 'delta' --> difference between min-max of the epoch
+    :scores:             Return performance of EDA prediction (R2)
     :estimator:          String.   Model used to predict EDA
-                         Default = TweedieRegressor
+                         Default = TweedieRegressor()
+    :power:              Int. The power determines the underlying target distribution.
+                         Default = 2 --> Gamma
+    :alpha:              Int. Constant that multiplies the penalty term and thus determines
+                         the regularization strength.
+                         Default = 1
+    :link:               String. Link function of the GLM
+                         Default = 'log'    
                             
     
     :return: .csv file per subject with predicted EDA (specifying other parameters)
     
     """ 
     # container
-    exp = []
-    
+    exp = []   
     # Return arguments and values passed to a function
     func_args = locals()
-    
-    ###########################################################################
-    n_compo = 32
-    scale = 'auto'
-    metric = 'riemann'
-    seed = 42
-    n_splits = 2
-    n_jobs = 20
-    ###########################################################################
 
     # Making the function work with only one subject as input
     if type(number_subject) == str:
@@ -246,7 +256,7 @@ def pipeline_all_subjects  (directory        =  'data',
                             reg=1.e-05),
             Riemann(n_fb=n_fb, metric=metric),
             StandardScaler(),
-            estimator())
+            estimator(power=power, alpha =alpha, link=link))
         
         else:
             riemann_model = make_pipeline(
@@ -254,7 +264,7 @@ def pipeline_all_subjects  (directory        =  'data',
                             reg=1.e-05),
             Riemann(n_fb=n_fb, metric=metric),
             StandardScaler(),
-            estimator)
+            estimator())
         
         cv = KFold(n_splits=2, shuffle=False)
 
@@ -263,48 +273,72 @@ def pipeline_all_subjects  (directory        =  'data',
         r2_riemann_model = cross_val_score(riemann_model, X, y, cv=cv,  groups=groups)
         print("mean of R2 cross validation Riemannian Model : ", np.mean(r2_riemann_model))
         
-        for scoring in ("r2", "neg_mean_absolute_error"):
-            all_scores = dict()
-            for key, estimator in pipelines.items():
-                cv = GroupShuffleSplit(n_splits=2, train_size=.5, test_size=.5)
-                scores = cross_val_score(X=X, y=y, estimator=estimator,
-                                        cv=cv, n_jobs=min(2, n_jobs),
-                                        groups=groups,
-                                        scoring=scoring)
-                if scoring == 'neg_mean_absolute_error':
-                    scores = -scores
-                all_scores[key] = scores
-            score_name = scoring if scoring == 'r2' else 'mae'
-            np.save(op.join('data',
-                            f'all_scores_models_fieldtrip_spoc_{score_name}.npy'),
-                    all_scores)
+        if scores_prediction == True:
+            for scoring in ("r2", "neg_mean_absolute_error"):
+                all_scores = dict()
+                for key, estimator in pipelines.items():
+                    cv = GroupShuffleSplit(n_splits=2, train_size=.5, test_size=.5)
+                    scores = cross_val_score(X=X, y=y, estimator=estimator,
+                                            cv=cv, n_jobs=min(2, n_jobs),
+                                            groups=groups,
+                                            scoring=scoring)
+                    if scoring == 'neg_mean_absolute_error':
+                        scores = -scores
+                    all_scores[key] = scores
+                score_name = scoring if scoring == 'r2' else 'mae'
+            #return all_scores
+
+            exp.append([{'raw':raw}, {'eda':eda}, {'ec':ec}, {'y': y},
+                      {'y_pred': y_preds}, {'all_scores': all_scores}])
         
-        exp.append [i, func_args, raw, eda, ec, y, y_preds]
+        else:
+            exp.append([{'raw':raw}, {'eda':eda}, {'ec':ec}, {'y': y},
+                      {'y_pred': y_preds}])
         
     return exp
         
 #%%
-experiment_results = pipeline_all_subjects(number_subject=['01', '02'],
-                                           crop = True,
-                                           tune_components = False)
-
+#all_subjects ={}
+#for i in ['01', '02']:
+#    experiment_results = global_run(number_subject=i, crop=True)
+#    all_subjects[i] = [experiment_results]
+    
 #%%
-fig, ax = plt.subplots(1, 1, figsize=[10, 4])
-times = raw.times[ec.events[:, 0] - raw.first_samp]
-ax.plot(times, y_preds, color='b', label='Predicted EDA', linewidth=2, alpha=0.3)
-ax.plot(times, y, color='r', label='True EDA', linewidth=2, alpha=0.3)
-ax.set_xlabel('Time (s)')
-ax.set_ylabel('EDA mean')
-ax.set_title('Riemann EDA Predictions')
-plt.legend()
-#plt.xlim(0,300)
-mne.viz.tight_layout()
-plt.show()
+alpha = list(np.logspace(-3, 5, 100))
+# boilerplate function to print kwargs
+def print_kwargs(**kwargs):
+    print(kwargs)
+
+subject_number = ['01', '02']    
+# Set combinations of paramaters
+dynamic_params = {
+                     'number_subject'     : subject_number,
+#                    'high_pass_filter'   : [None, .001,.01, .05, .1, .2, 0.5],
+#                    'shift_EDA'          : [0., 0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4., 4.5, 5.],
+#                    'target'             : ['mean', 'var', 'delta'],
+#                    'estimator'          : ['TweedieRegressor'],
+#                    'power'              : [2, 3], # 2: Gamma / 3: Inverse Gaussian
+#                    'alpha'              : alpha
+                }
+
+# Select which parameter we are going to test in this run
+keys_to_extract = ["number_subject"]#, "shift_EDA_EEG"]
+
+param_subset = {key: dynamic_params[key] for key in keys_to_extract}
+
+param_names = list(param_subset.keys())
+# zip with parameter names in order to get original property
+param_values = (zip(param_names, x) for x in product(*param_subset.values()))
+
+total_param = []
+results_group_by_parameters = {}
+for paramset in param_values:
+    # use the dict from iterator of tuples constructor
+    kwargs = dict(paramset)
+    print_kwargs(**kwargs)
+    total_param.append(kwargs)
+    experiment_results = global_run(**kwargs)
+    key_kwargs = frozenset(kwargs.items())
+    results_group_by_parameters[key_kwargs] = [experiment_results]
 
 # %%
-"""
-Integrar todo en la funcion final
--  Dataframe: use itertools
--  Que se pueda correr en Drago
-
-"""
