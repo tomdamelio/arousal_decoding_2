@@ -91,7 +91,9 @@ def global_run (directory         =  'data',
                          Default = 'log'    
                             
     
-    :return: .csv file per subject with predicted EDA (specifying other parameters)
+    :return:             Dictionary with 'key' = parameters and arguments I tested
+                         (e.g. subject 1, shif_EDA = 1.5), and ''value": eeg raw data, EDA data,
+                         epochs, true EDA (e.g. true EDA var) and predicted EDA (e.g. predicted EDA var)
     
     """ 
     # container
