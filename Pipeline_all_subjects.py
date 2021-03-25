@@ -1,4 +1,3 @@
-#%%
 import os
 import os.path as op
 import numpy as np
@@ -47,7 +46,6 @@ def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
         out[name] = scores
     return out
 
-#%%
 def global_run (directory         =  'data',
                 number_subject    =   subject_number,
                 crop              =   True,
@@ -299,13 +297,11 @@ def global_run (directory         =  'data',
         
     return exp
         
-#%%
 #all_subjects ={}
 #for i in ['01', '02']:
 #    experiment_results = global_run(number_subject=i, crop=True)
 #    all_subjects[i] = [experiment_results]
     
-#%%
 alpha = list(np.logspace(-3, 5, 100))
 # boilerplate function to print kwargs
 def print_kwargs(**kwargs):
@@ -343,4 +339,4 @@ for paramset in param_values:
     key_kwargs = frozenset(kwargs.items())
     results_group_by_parameters[key_kwargs] = [experiment_results]
 
-# %%
+
