@@ -234,33 +234,33 @@ def global_preprocessing(number_subject = subject_number,
         
         return raw, ec
 #%%        
-        X = []
+#        X = []
 
-        for fb in pp.fbands:
+#        for fb in pp.fbands:
             
-            ec_fbands = ec.copy().load_data().pick_types(eeg=True).filter(fb[0], fb[1])
+#            ec_fbands = ec.copy().load_data().pick_types(eeg=True).filter(fb[0], fb[1])
 
-            X.append([mne.compute_covariance(
-                                            ec_fbands[ii], method='oas')['data'][None]
-                                            for ii in range(len(ec_fbands))])   
+#            X.append([mne.compute_covariance(
+#                                            ec_fbands[ii], method='oas')['data'][None]
+#                                            for ii in range(len(ec_fbands))])   
 
-        X = np.array(X)   
+#        X = np.array(X)   
         # Delete one axis     
-        X = np.squeeze(X)
+#        X = np.squeeze(X)
         # order axis of ndarray (first n_sub, then n_fb)
-        X = X.transpose(1,0,2,3)
-        n_sub, n_fb, n_ch, _ = X.shape
+#        X = X.transpose(1,0,2,3)
+#        n_sub, n_fb, n_ch, _ = X.shape
         
-        eda_epochs = ec.copy().pick_channels(['EDA']).shift_time(tshift= shift_EDA, relative=True)
+#        eda_epochs = ec.copy().pick_channels(['EDA']).shift_time(tshift= shift_EDA, relative=True)
         
-        if target == 'mean':
-            y = eda_epochs.get_data().mean(axis=2)[:, 0]  
-        elif target == 'delta':
-            y = eda_epochs.get_data().max(axis=2)[:, 0] - eda_epochs.get_data().min(axis=2)[:, 0]
-        else:
-            y = eda_epochs.get_data().var(axis=2)[:, 0]     
+#        if target == 'mean':
+#            y = eda_epochs.get_data().mean(axis=2)[:, 0]  
+#        elif target == 'delta':
+#            y = eda_epochs.get_data().max(axis=2)[:, 0] - eda_epochs.get_data().min(axis=2)[:, 0]
+#        else:
+#            y = eda_epochs.get_data().var(axis=2)[:, 0]     
             
-        return raw, X, y
+#        return raw, X, y
 
 
 #%%
