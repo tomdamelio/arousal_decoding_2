@@ -262,73 +262,29 @@ def global_preprocessing(number_subject = subject_number,
             
         return raw, X, y
 
+
 #%%
-#### VISUALIZING EFECT OF EEG REFERENCE PROJ ####
-# https://mne.tools/dev/auto_tutorials/preprocessing/45_projectors_background.html
-
-report = mne.Report(verbose=True)
-
-for proj, avg_reference in ([False, False], [True, True]):
-    #proj, avg_reference = False, False
-    globals()[f'plots_results_{proj}'] = []
-    raw, _ = global_preprocessing(number_subject = '01',
-                                    annotations_resp = True,
-                                    annotations_no_stim = True,
-                                    avg_reference = avg_reference,
-                                    crop = False,
-                                    project_eog = False,
-                                    apply_autoreject = False)
-
-    eeg_raw = raw.copy().crop(tmin=1000, tmax=1010).pick_types(eeg=True)
-    times = eeg_raw.times[::512]
-    for t in times:
-        globals()[f'fig_proj_{proj}'] =  eeg_raw.plot(start = t, duration = 1, butterfly=True,
-                                                      proj=proj, show=False)
-        globals()[f'fig_proj_{proj}'].subplots_adjust(top=0.9)
-        globals()[f'fig_proj_{proj}'].suptitle('proj={proj}', size='xx-large', weight='bold')
-        globals()[f'plots_results_{proj}'].append(globals()[f'fig_proj_{proj}']) 
-
-    report.add_slider_to_section(globals()[f'plots_results_{proj}'], times, f'EEG reference Proj',
-                                 title = f'EEG reference Proj = {proj}', image_format='png')  
-
-# add the custom plots to the report:
-#report.add_figs_to_section([fig_proj_False, fig_proj_True],
-#                           captions=['EEG reference Proj = False',
-#                                     'EEG reference Proj = True'],
-#                           section='EEG reference Proj')
-
-report.save('report_EEG_reference_Proj.html', overwrite=True)
-    
-#%%
-#### TEST EOG EPOCHS REMOVAL ####
-# https://mne.tools/dev/auto_tutorials/preprocessing/10_preprocessing_overview.html
+#### CREATE EOG PROJ ####
 raw, _ = global_preprocessing(number_subject = '01',
                               annotations_resp = True,
                               annotations_no_stim = True,
+                              avg_reference = True,
                               crop = False,
                               project_eog = False,
                               apply_autoreject = False)
 
+        
 eog_epochs = mne.preprocessing.create_eog_epochs(raw)
-eog_epochs.plot_image(combine='mean', picks='eeg')
-eog_epochs.average().plot()
 
-# The result does not seem to give physiological signals.
+reject_eog = get_rejection_threshold(eog_epochs, decim=5)
+del reject_eog['eog']
+    
+# Compute SSP (signal-space projection) vectors for EOG artifacts.
+proj_eog, _ = mne.preprocessing.compute_proj_eog(
+    raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
 
-#%%
-#### VISUALIZING EFECT OF EOG PROJ ####
-for project_eog in (False, True):
-    raw, _ = global_preprocessing(number_subject = '01',
-                                  annotations_resp = True,
-                                  annotations_no_stim = True,
-                                  avg_reference = True,
-                                  crop = False,
-                                  project_eog = project_eog,
-                                  apply_autoreject = False)
-    eog_epochs = mne.preprocessing.create_eog_epochs(raw)
-    eog_epochs.plot_image(combine='mean', picks='eeg', title= f'SSP={}')
-    eog_epochs.average().plot()
-
+if proj_eog is not None:
+    raw.add_proj(proj_eog)
     
 #%%
  
@@ -539,3 +495,93 @@ for paramset in param_values:
     experiment_results = global_run(**kwargs)
     key_kwargs = frozenset(kwargs.items())
     results_group_by_parameters[key_kwargs] = [experiment_results]
+
+
+
+
+
+
+
+
+
+
+#############################################################
+#################         TESTS         #####################
+#############################################################
+#%%
+#### VISUALIZING EFECT OF EEG REFERENCE PROJ ####
+# https://mne.tools/dev/auto_tutorials/preprocessing/45_projectors_background.html
+
+report = mne.Report(verbose=True)
+
+for subject in ['01', '02', '03']: #subject_number:
+    for proj, avg_reference in ([False, False], [True, True]):
+        # Create container for two types of plots
+        globals()[f'plots_results_{proj}'] = []
+        # Run function to preprocess signal depeding avg_reference
+        raw, _ = global_preprocessing(number_subject = subject,
+                                      annotations_resp = True,
+                                      annotations_no_stim = True,
+                                      avg_reference = avg_reference,
+                                      crop = False,
+                                      project_eog = False,
+                                      apply_autoreject = False)
+
+        # Crop data
+        eeg_raw = raw.copy().crop(tmin=1000, tmax=1010).pick_types(eeg=True)
+        # Create times to insert in sliders
+        times = eeg_raw.times[::512]
+        # for loop to create plot with sliders to insert in report
+        for t in times:
+            # create plot with time t
+            globals()[f'fig_proj_{proj}'] =  eeg_raw.plot(start = t, duration = 1, butterfly=True,
+                                                        proj=proj, show=False)
+            globals()[f'fig_proj_{proj}'].subplots_adjust(top=0.9)
+            globals()[f'fig_proj_{proj}'].suptitle(f'proj={proj}', size='xx-large', weight='bold')
+            # append this plot with time t in 'plots_results_{proj}'
+            globals()[f'plots_results_{proj}'].append(globals()[f'fig_proj_{proj}']) 
+
+        report.add_slider_to_section(globals()[f'plots_results_{proj}'],
+                                      times, f'S{subject}',
+                                      title = f'EEG reference Proj = {proj}',
+                                      image_format='png')  
+
+report.save('report_EEG_reference_Proj.html', overwrite=True)
+    
+#%%
+#### TEST EOG EPOCHS REMOVAL ####
+# https://mne.tools/dev/auto_tutorials/preprocessing/10_preprocessing_overview.html
+raw, _ = global_preprocessing(number_subject = '01',
+                              annotations_resp = True,
+                              annotations_no_stim = True,
+                              crop = False,
+                              project_eog = False,
+                              apply_autoreject = False)
+
+eog_epochs = mne.preprocessing.create_eog_epochs(raw)
+eog_epochs.plot_image(combine='mean', picks='eeg')
+eog_epochs.average().plot()
+
+#%%
+#### VISUALIZING EFECT OF EOG PROJ ####
+report = mne.Report(verbose=True)
+for subject in ['05']: #subject_number:
+    globals()[f'plots_results_{subject}'] = []
+    # Run function to preprocess signal depeding project_eog
+    for project_eog in (False, True):
+        raw, _ = global_preprocessing(number_subject = subject,
+                                      annotations_resp = True,
+                                      annotations_no_stim = True,
+                                      avg_reference = True,
+                                      crop = False,
+                                      project_eog = project_eog,
+                                      apply_autoreject = False)
+        eog_epochs = mne.preprocessing.create_eog_epochs(raw)
+        globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(show=False))
+    # add the custom plots to the report:
+    report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
+                               captions = [f'SSP = False / EEG (32 channels)',
+                                           f'SSP = True / EEG (32 channels)'],
+                               section=f'S{subject}')
+
+report.save('report_custom.html', overwrite=True)
