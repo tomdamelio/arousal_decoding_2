@@ -143,19 +143,22 @@ def global_preprocessing(number_subject = subject_number,
             raw = mne.io.read_raw_fif(fname, preload=True)
             raw.set_channel_types({ 'Resp': 'misc'})
 
+
         elif annotations_resp == True and annotations_no_stim == False:
             directory = 'outputs/data/EDA+EEG+bad_resp/'
             extension = '.fif'
             fname = op.join(directory, 's'+ subject + extension)
             raw = mne.io.read_raw_fif(fname, preload=True)
-            raw.set_channel_types({ 'EDA': 'misc'})
+            raw.set_channel_types({'EDA' : 'misc',
+                                   'Resp': 'misc'})
         
         elif annotations_resp == False and annotations_no_stim == True:
             directory = 'outputs/data/EDA+EEG+bad_no_stim/'
             extension = '.fif'
             fname = op.join(directory, 's'+ subject + extension)
             raw = mne.io.read_raw_fif(fname, preload=True)
-            raw.set_channel_types({ 'EDA': 'misc'})
+            raw.set_channel_types({'EDA' : 'misc',
+                                   'Resp': 'misc'})
         
         else:
             directory = 'data/'
@@ -174,7 +177,8 @@ def global_preprocessing(number_subject = subject_number,
                                     'EDA' : 'misc',
                                     'Erg1': 'misc',
                                     'Erg2': 'misc',
-                                    'Resp': 'misc'})
+                                    'Resp': 'misc',
+                                    'Plet': 'misc'})
             
             # Common channels
             common_chs = set(raw.info['ch_names'])
@@ -182,12 +186,11 @@ def global_preprocessing(number_subject = subject_number,
             common_chs -= {'EXG5', 'EXG6', 'EXG7', 'EXG8',
                            'GSR2', 'Erg1', 'Erg2', 'Plet', 'Temp'}
             
-            common_chs = set(raw.info['ch_names'])
             raw.pick_channels(list(common_chs))
             
             picks_eda = mne.pick_channels(ch_names = raw.ch_names ,include=['EDA'])
             
-            if int(i) < 23:
+            if int(subject) < 23:
                 raw.apply_function(fun=lambda x: x/1000, picks=picks_eda)
             else:
                 raw.apply_function(fun=lambda x: (10**9/x)/1000, picks=picks_eda)
@@ -265,15 +268,15 @@ def global_preprocessing(number_subject = subject_number,
 
 #%%
 #### CREATE EOG PROJ ####
-raw, _ = global_preprocessing(number_subject = '01',
+raw, _ = global_preprocessing(number_subject = '05',
                               annotations_resp = True,
                               annotations_no_stim = True,
                               avg_reference = True,
                               crop = False,
-                              project_eog = False,
+                              project_eog = True,
                               apply_autoreject = False)
 
-        
+#%%
 eog_epochs = mne.preprocessing.create_eog_epochs(raw)
 
 reject_eog = get_rejection_threshold(eog_epochs, decim=5)
@@ -284,7 +287,98 @@ proj_eog, _ = mne.preprocessing.compute_proj_eog(
     raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
 
 if proj_eog is not None:
-    raw.add_proj(proj_eog)
+    eog_epochs.add_proj(proj_eog)
+
+eog_epochs.average().plot(proj=True)
+
+#%%
+#### VISUALIZING EFECT OF EOG PROJ ####
+report = mne.Report(verbose=True)
+for subject in ['05']: #subject_number:
+    globals()[f'plots_results_{subject}'] = []
+    # Run function to preprocess signal depeding project_eog
+    for project_eog in (False, True):
+        raw, _ = global_preprocessing(number_subject = subject,
+                                      annotations_resp = True,
+                                      annotations_no_stim = True,
+                                      avg_reference = True,
+                                      crop = False,
+                                      project_eog = False,
+                                      apply_autoreject = False)
+        eog_epochs = mne.preprocessing.create_eog_epochs(raw)
+        if project_eog == True:
+            reject_eog = get_rejection_threshold(eog_epochs, decim=5)
+            del reject_eog['eog']
+                
+            # Compute SSP (signal-space projection) vectors for EOG artifacts.
+            proj_eog, _ = mne.preprocessing.compute_proj_eog(
+                raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
+
+            if proj_eog is not None:
+                eog_epochs.add_proj(proj_eog)
+        globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(proj=True, show=False, ylim = dict(eeg = [-25, 100])))
+    # add the custom plots to the report:
+    report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
+                               captions = [f'SSP = False / EEG (32 channels)',
+                                           f'SSP = True / EEG (32 channels)'],
+                               section=f'S{subject}')
+
+report.save('report_custom.html', overwrite=True)    
+    
+    
+    
+#%%
+#### VISUALIZING EFECT OF EOG PROJ - WITH THE FUNCTION####
+report = mne.Report(verbose=True)
+for subject in ['29']:
+    globals()[f'plots_results_{subject}'] = []
+    # Run function to preprocess signal depeding project_eog
+    for project_eog in (False, True):
+        raw, _ = global_preprocessing(number_subject = subject,
+                                      annotations_resp = True,
+                                      annotations_no_stim = True,
+                                      avg_reference = True,
+                                      crop = False,
+                                      project_eog = False,
+                                      apply_autoreject = False)
+        
+        eog_epochs = mne.preprocessing.create_eog_epochs(raw)
+        
+        if project_eog == False:
+            plot_eog_avg = eog_epochs.average().plot(proj=True, show=False)
+            plot_lims = plot_eog_avg.axes[0].get_ylim()
+            globals()[f'plots_results_{subject}'].append(plot_eog_avg)
+            
+        else:
+            reject_eog = get_rejection_threshold(eog_epochs, decim=5)
+            del reject_eog['eog']
+                
+            # Compute SSP (signal-space projection) vectors for EOG artifacts.
+            proj_eog, _ = mne.preprocessing.compute_proj_eog(
+                raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
+
+            if proj_eog is not None:
+                eog_epochs.add_proj(proj_eog)
+
+            globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(proj=True, show=False,
+                                                                                   ylim = dict(eeg = list(plot_lims))))
+    # add the custom plots to the report:
+    report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
+                               captions = [f'SSP = False / EEG (32 channels)',
+                                           f'SSP = True / EEG (32 channels)'],
+                               section=f'S{subject}')
+
+report.save('report_custom.html', overwrite=True)    
+        
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
 #%%
  
@@ -562,26 +656,3 @@ eog_epochs = mne.preprocessing.create_eog_epochs(raw)
 eog_epochs.plot_image(combine='mean', picks='eeg')
 eog_epochs.average().plot()
 
-#%%
-#### VISUALIZING EFECT OF EOG PROJ ####
-report = mne.Report(verbose=True)
-for subject in ['05']: #subject_number:
-    globals()[f'plots_results_{subject}'] = []
-    # Run function to preprocess signal depeding project_eog
-    for project_eog in (False, True):
-        raw, _ = global_preprocessing(number_subject = subject,
-                                      annotations_resp = True,
-                                      annotations_no_stim = True,
-                                      avg_reference = True,
-                                      crop = False,
-                                      project_eog = project_eog,
-                                      apply_autoreject = False)
-        eog_epochs = mne.preprocessing.create_eog_epochs(raw)
-        globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(show=False))
-    # add the custom plots to the report:
-    report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
-                               captions = [f'SSP = False / EEG (32 channels)',
-                                           f'SSP = True / EEG (32 channels)'],
-                               section=f'S{subject}')
-
-report.save('report_custom.html', overwrite=True)
