@@ -53,7 +53,8 @@ def run_low_rank(n_components, X, y, cv, estimators, scoring, groups):
 def _get_global_reject_ssp(raw, decim=5):
     # generate epochs around EOG artifact events
     eog_epochs = mne.preprocessing.create_eog_epochs(raw)
-    if len(eog_epochs) >= 5: #  (?) Why?
+    #  Cannot have number of splits n_splits=5 greater than the number of samples: n_samples=3.
+    if len(eog_epochs) >= 5: 
         # Reject eog artifacts epochs with autoreject
         reject_eog = get_rejection_threshold(eog_epochs, decim=decim)
         del reject_eog['eog']
@@ -195,6 +196,15 @@ def global_preprocessing(number_subject = subject_number,
             else:
                 raw.apply_function(fun=lambda x: (10**9/x)/1000, picks=picks_eda)
 
+        # Fix problems with ch_names and ch_types
+        if int(subject) > 28 and annotations_no_stim == False:
+            raw.rename_channels(mapping={'-1': 'Status'} )
+            raw.drop_channels('-0')            
+
+        elif int(subject) > 23 and annotations_no_stim == False:
+            raw.rename_channels(mapping={'': 'Status'} )
+            
+        raw.set_channel_types({ 'Status': 'stim'})
 
         # Crop for memory purposes (use to test things)
         if crop == True:
@@ -268,15 +278,6 @@ def global_preprocessing(number_subject = subject_number,
 
 #%%
 #### CREATE EOG PROJ ####
-raw, _ = global_preprocessing(number_subject = '05',
-                              annotations_resp = True,
-                              annotations_no_stim = True,
-                              avg_reference = True,
-                              crop = False,
-                              project_eog = True,
-                              apply_autoreject = False)
-
-#%%
 eog_epochs = mne.preprocessing.create_eog_epochs(raw)
 
 reject_eog = get_rejection_threshold(eog_epochs, decim=5)
@@ -291,52 +292,22 @@ if proj_eog is not None:
 
 eog_epochs.average().plot(proj=True)
 
+
+    
 #%%
 #### VISUALIZING EFECT OF EOG PROJ ####
 report = mne.Report(verbose=True)
-for subject in ['05']: #subject_number:
+
+# Help to insert report name later
+annotations_resp = True
+annotations_no_stim = True
+for subject in subject_number:
     globals()[f'plots_results_{subject}'] = []
     # Run function to preprocess signal depeding project_eog
     for project_eog in (False, True):
         raw, _ = global_preprocessing(number_subject = subject,
-                                      annotations_resp = True,
-                                      annotations_no_stim = True,
-                                      avg_reference = True,
-                                      crop = False,
-                                      project_eog = False,
-                                      apply_autoreject = False)
-        eog_epochs = mne.preprocessing.create_eog_epochs(raw)
-        if project_eog == True:
-            reject_eog = get_rejection_threshold(eog_epochs, decim=5)
-            del reject_eog['eog']
-                
-            # Compute SSP (signal-space projection) vectors for EOG artifacts.
-            proj_eog, _ = mne.preprocessing.compute_proj_eog(
-                raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
-
-            if proj_eog is not None:
-                eog_epochs.add_proj(proj_eog)
-        globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(proj=True, show=False, ylim = dict(eeg = [-25, 100])))
-    # add the custom plots to the report:
-    report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
-                               captions = [f'SSP = False / EEG (32 channels)',
-                                           f'SSP = True / EEG (32 channels)'],
-                               section=f'S{subject}')
-
-report.save('report_custom.html', overwrite=True)    
-    
-    
-    
-#%%
-#### VISUALIZING EFECT OF EOG PROJ - WITH THE FUNCTION####
-report = mne.Report(verbose=True)
-for subject in ['29']:
-    globals()[f'plots_results_{subject}'] = []
-    # Run function to preprocess signal depeding project_eog
-    for project_eog in (False, True):
-        raw, _ = global_preprocessing(number_subject = subject,
-                                      annotations_resp = True,
-                                      annotations_no_stim = True,
+                                      annotations_resp = annotations_resp,
+                                      annotations_no_stim = annotations_no_stim,
                                       avg_reference = True,
                                       crop = False,
                                       project_eog = False,
@@ -344,44 +315,64 @@ for subject in ['29']:
         
         eog_epochs = mne.preprocessing.create_eog_epochs(raw)
         
-        if project_eog == False:
-            plot_eog_avg = eog_epochs.average().plot(proj=True, show=False)
-            plot_lims = plot_eog_avg.axes[0].get_ylim()
-            globals()[f'plots_results_{subject}'].append(plot_eog_avg)
-            
-        else:
-            reject_eog = get_rejection_threshold(eog_epochs, decim=5)
-            del reject_eog['eog']
+        if len(eog_epochs) >= 5: 
+                        
+            if project_eog == False:
+                plot_eog_avg = eog_epochs.average().plot(proj=True, show=False)
+                plot_lims = plot_eog_avg.axes[0].get_ylim()
+                globals()[f'plots_results_{subject}'].append(plot_eog_avg)
                 
-            # Compute SSP (signal-space projection) vectors for EOG artifacts.
-            proj_eog, _ = mne.preprocessing.compute_proj_eog(
-                raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
+            else:
+                reject_eog = get_rejection_threshold(eog_epochs, decim=5)
+                del reject_eog['eog']
+                    
+                # Compute SSP (signal-space projection) vectors for EOG artifacts.
+                proj_eog, _ = mne.preprocessing.compute_proj_eog(
+                    raw, average=True, reject=reject_eog, n_mag=0, n_grad=0, n_eeg=1, verbose = True)
 
-            if proj_eog is not None:
-                eog_epochs.add_proj(proj_eog)
+                if proj_eog is not None:
+                    eog_epochs.add_proj(proj_eog)
 
-            globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(proj=True, show=False,
-                                                                                   ylim = dict(eeg = list(plot_lims))))
-    # add the custom plots to the report:
-    report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
-                               captions = [f'SSP = False / EEG (32 channels)',
-                                           f'SSP = True / EEG (32 channels)'],
-                               section=f'S{subject}')
-
-report.save('report_custom.html', overwrite=True)    
+                globals()[f'plots_results_{subject}'].append(eog_epochs.average().plot(proj=True, show=False,
+                                                                                    ylim = dict(eeg = list(plot_lims))))
+    
+    if len(eog_epochs) >= 5:
+        # add the custom plots to the report:
+        report.add_figs_to_section(figs = globals()[f'plots_results_{subject}'],
+                                captions = [f'SSP = False / EEG (32 channels)',
+                                            f'SSP = True / EEG (32 channels)'],
+                                section=f'S{subject}')
+    
+report.save(f'KEEP_report_all_subjects.html', overwrite=True)
+#report.save(f'report_{subject}_annotations_{annotations_resp}_{annotations_no_stim}.html', overwrite=True)    
         
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 #%%
- 
+report.save(f'KEEP_report_{subject}_annotations_{annotations_resp}_{annotations_no_stim}.html', overwrite=True)      
+        
+
+#%%
+bads = []
+for subject in subject_number:
+    raw, _ = global_preprocessing(number_subject = subject,
+                                annotations_resp = False,
+                                annotations_no_stim = False,
+                                avg_reference = True,
+                                crop = False,
+                                project_eog = True,
+                                apply_autoreject = False)
+    bads.append(raw.info['bads'])
+
+#%%
+def _simplify_info(info):
+    """Return a simplified info structure to speed up picking."""
+    chs = [{key: ch[key]
+            for key in ('ch_name', 'kind', 'unit', 'coil_type', 'loc', 'cal')}
+           for ch in info['chs']]
+    sub_info = mne.Info(chs=chs)
+    return sub_info
+
+
+#%% 
 def global_modeling(number_subject = subject_number,
                     tune_components = False,
                     scores_prediction = False,
