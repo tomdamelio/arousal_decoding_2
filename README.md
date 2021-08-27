@@ -1,5 +1,5 @@
 In this repository are available the scripts to obtain the results of the Cogmaster Thesis (2020-2021) of TA D'Amelio (Supervisor: DA Engemann):
-#Predicting modeling of arousal: an analysis of a public EEG and EDA database
+# Predicting modeling of arousal: an analysis of a public EEG and EDA database
 
 The codes to obtain the results of the EMG and EDA mean and variance predictions are:
 - `DEAP_covariances_regression_eda_var.py`
