@@ -1,3 +1,22 @@
+In this repository are available the scripts to obtain the results of the Cogmaster Thesis (2020-2021) of TA D'Amelio (Supervisor: DA Engemann):
+#Predicting modeling of arousal: an analysis of a public EEG and EDA database
+
+The codes to obtain the results of the EMG and EDA mean and variance predictions are:
+- `DEAP_covariances_regression_eda_var.py`
+- `DEAP_covariances_regression_eda_mean.py`
+- `DEAP_covariances_regression_emg_var.py`
+- `DEAP_covariances_regression_emg_mean.py`
+The only difference between these four scripts are two lines of code where we specify which measurement (i.e. EDA or EMG) and which descriptive statistic of the signal (i.e. mean or variace) used, parameters that can be changed at the beginning of these scripts.
+To run the EDA and EMG predictions we are using the covariance matrices previously computed, these files have been run:
+- `DEAP_compute_covs_eda.py`
+- `DEAP_compute_covs_emg.py`
+These covariances matrices consider 7 freq bands, from low (0.1, 1.5) to 'gamma' (35., 49.).
+For the calculation of the covariance matrices, clean epoches obtained by means of `MNE-BIDS-Pipeline` are used.
+Different pipelines were made for EMG and EDA (`mne-bids-pipeline-eda`) and EMG (`mne-bids-pipeline-emg`), considering the length of the epochs was different depending on whether the target of the predictions was one or the other signal (shorter epochs for EMG).
+The config files with which the pipeline bids were run are `DEAP_BIDS_config_emg.py` and DEAP_BIDS_config_eda.py, where it is possible to find all the settings of the preprocessing.
+
+In this repository it is possible to find all the scripts, even those that were used in preliminary versions of the analyses, in order to guarantee the transparency of the work carried out during this thesis.
+
 ## channel_names.py
 - input   --> -
 - process --> channels' order according to location (twente or geneva)
